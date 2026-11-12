@@ -29,7 +29,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-latest    # macos-14 runners are no longer offered by GitHub
             name: macOS
             configure: -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
             tests: build/PluginAnalyzerTests_artefacts/Release/PluginAnalyzerTests

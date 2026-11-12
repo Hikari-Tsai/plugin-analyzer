@@ -298,7 +298,7 @@ int main()
         rig.settings.mode = Mode::Specs;
         auto r = rig.run();
         printSpecs (r);
-        check (specText (r, "Gain @").startsWith ("0.00 dB"), "gain 0.00 dB");
+        check (specText (r, "Gain @").startsWith ("0.00 dB"), "gain 0.00 dB (never \"-0.00\"): " + specText (r, "Gain @"));
         check (specText (r, "Impulse peak").startsWith ("0 samples"), "latency check passes");
         check (specText (r, "Deviation").startsWith ("0.00 dB"), "flat response");
         check (specText (r, "Crosstalk L->R").startsWith ("< -200"), "no crosstalk");

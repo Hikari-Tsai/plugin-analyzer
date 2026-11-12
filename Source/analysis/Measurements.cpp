@@ -1187,9 +1187,20 @@ bool measurePerformance (Ctx& c)
 //==============================================================================
 // Specs: a datasheet of standard figures (AES17 / IEC 60268-style)
 //==============================================================================
+/** Fixed-point text that never shows "-0.00": values that round to zero lose their sign
+    (tiny negative rounding errors differ between FFT back-ends, e.g. macOS vs Windows). */
+String fixed (double v, int decimals)
+{
+    const double scale = std::pow (10.0, decimals);
+    double r = std::round (v * scale) / scale;
+    if (juce::exactlyEqual (r, 0.0))
+        r = 0.0;
+    return String (r, decimals);
+}
+
 String dbOrFloor (double db, int decimals, const String& unit = " dB")
 {
-    return db <= -199.0 ? String ("< -200") + unit : String (db, decimals) + unit;
+    return db <= -199.0 ? String ("< -200") + unit : fixed (db, decimals) + unit;
 }
 
 String ratioText (float ratio)
@@ -1369,7 +1380,7 @@ bool measureSpecs (Ctx& c)
          "Non-zero: latency misreported, or a linear-phase / look-ahead design");
     add ("Level & latency", "DC offset at output (silent input)", dbOrFloor (gainToDb ((float) std::abs (mean), -200.0f), 1, " dBFS"));
 
-    add ("Frequency response", "Deviation 20 Hz - 20 kHz (-20 dBFS)", String (fMax - fMin, 2) + " dB  (" + String (fMin, 2) + " to " + String (fMax, 2) + " dB)");
+    add ("Frequency response", "Deviation 20 Hz - 20 kHz (-20 dBFS)", fixed (fMax - fMin, 2) + " dB  (" + fixed (fMin, 2) + " to " + fixed (fMax, 2) + " dB)");
     add ("Frequency response", "-3 dB points (re 1 kHz)", lowText + "  /  " + highText);
 
     add ("Distortion", "THD @ " + f997 + ", -1 dBFS", ratioText (thd1.thd));
@@ -1381,14 +1392,14 @@ bool measureSpecs (Ctx& c)
 
     add ("Noise", "Idle output noise (unweighted)", dbOrFloor (dbfsFromMs (ms), 1, " dBFS"));
     add ("Noise", "Idle output noise (A-weighted)", dbOrFloor (dbfsFromMs (msA), 1, " dBFS(A)"));
-    add ("Noise", "Dynamic range (AES17, -60 dBFS, A-wtd)", dynamicRange > 300 ? String ("> 300 dB (no residual)") : String (dynamicRange, 1) + " dB");
+    add ("Noise", "Dynamic range (AES17, -60 dBFS, A-wtd)", dynamicRange > 300 ? String ("> 300 dB (no residual)") : fixed (dynamicRange, 1) + " dB");
 
-    add ("Stereo", "L/R gain mismatch @ " + f997, String (balance, 3) + " dB");
+    add ("Stereo", "L/R gain mismatch @ " + f997, fixed (balance, 3) + " dB");
     add ("Stereo", "Crosstalk L->R @ 1 kHz / 10 kHz", dbOrFloor (xtalk[0][0], 1) + "  /  " + dbOrFloor (xtalk[0][1], 1));
     add ("Stereo", "Crosstalk R->L @ 1 kHz / 10 kHz", dbOrFloor (xtalk[1][0], 1) + "  /  " + dbOrFloor (xtalk[1][1], 1));
 
-    add ("Peak", "True peak @ " + f997 + ", -1 dBFS in", String (gainToDb (tp, -200.0f), 2) + " dBTP");
-    add ("Peak", "Inter-sample overshoot (true - sample peak)", String (gainToDb (tp, -200.0f) - gainToDb (samplePeak, -200.0f), 2) + " dB", "4x band-limited reconstruction");
+    add ("Peak", "True peak @ " + f997 + ", -1 dBFS in", fixed (gainToDb (tp, -200.0f), 2) + " dBTP");
+    add ("Peak", "Inter-sample overshoot (true - sample peak)", fixed (gainToDb (tp, -200.0f) - gainToDb (samplePeak, -200.0f), 2) + " dB", "4x band-limited reconstruction");
 
     if (tSig >= 0 && tSil >= 0)
     {
