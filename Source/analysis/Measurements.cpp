@@ -58,6 +58,11 @@ struct Ctx
         out.curves.push_back (std::move (c));
     }
 
+    void metric (const String& name, int channel, double value, const String& unit)
+    {
+        out.metrics.push_back ({ name, chain, channel, value, unit });
+    }
+
     String prefix (int channel) const
     {
         return "[" + chainLabel (chain) + " " + channelLabel (s.midSide, channel) + "]";
@@ -168,6 +173,17 @@ void addSpectrumCurves (Ctx& c, int channel, const std::vector<cpx>& H, int fftS
 
     logReduce (mag, binHz, fMin, c.sr() / 2, 1600, Reduce::Mean, x, y);
     c.addCurve ("mag", channel, x, y);
+
+    {
+        const int k1k = juce::jlimit (1, numBins - 1, (int) std::lround (1000.0 / binHz));
+        const int k20 = juce::jlimit (1, numBins - 1, (int) std::lround (20.0 / binHz));
+        const int k20k = juce::jlimit (1, numBins - 1, (int) std::lround (juce::jmin (20000.0, 0.45 * c.sr()) / binHz));
+        float lo = mag[(size_t) k20], hi = lo;
+        for (int k = k20; k <= k20k; ++k) { lo = juce::jmin (lo, mag[(size_t) k]); hi = juce::jmax (hi, mag[(size_t) k]); }
+        c.metric ("gain_db_at_1khz", channel, mag[(size_t) k1k], "dB");
+        c.metric ("response_min_db_20hz_20khz", channel, lo, "dB");
+        c.metric ("response_max_db_20hz_20khz", channel, hi, "dB");
+    }
 
     logReduce (phase, binHz, fMin, c.sr() / 2, 1600, Reduce::Nearest, x, y);
     c.addCurve ("phase", channel, x, y);
@@ -391,6 +407,16 @@ bool measureThd (Ctx& c)
         addAmplitudeSpectrum (c, ch, A, N);
 
         const auto r = analyseThd (A, m);
+        c.metric ("fundamental_hz", ch, m * c.sr() / N, "Hz");
+        c.metric ("fundamental_dbfs", ch, gainToDb (r.fundamental, -200.0f), "dBFS");
+        c.metric ("thd_percent", ch, r.thd * 100.0, "%");
+        c.metric ("thd_db", ch, dbText (r.thd), "dB");
+        c.metric ("thdn_percent", ch, r.thdN * 100.0, "%");
+        c.metric ("thdn_db", ch, dbText (r.thdN), "dB");
+        c.metric ("non_harmonic_db", ch, dbText (r.nonHarmonic), "dB");
+        for (auto [k, db] : r.harmonicsDbc)
+            c.metric ("h" + String (k) + "_dbc", ch, db, "dBc");
+
         String line = c.prefix (ch) + "  f0 " + String (m * c.sr() / N, 1) + " Hz"
                     + "   THD " + percentText (r.thd) + " (" + String (dbText (r.thd), 1) + " dB)"
                     + "   THD+N " + percentText (r.thdN) + " (" + String (dbText (r.thdN), 1) + " dB)";
@@ -443,6 +469,8 @@ bool measureImd (Ctx& c)
 
         const float carrier = A[(size_t) mHigh];
         const float imd = carrier > 0 ? (float) (std::sqrt (side) / carrier) : 0.0f;
+        c.metric ("imd_percent", ch, imd * 100.0, "%");
+        c.metric ("imd_db", ch, dbText (imd), "dB");
         c.out.info.add (c.prefix (ch) + "  IMD (" + String (mLow * c.sr() / N, 1) + " Hz + "
                         + String (mHigh * c.sr() / N, 0) + " Hz)  " + percentText (imd)
                         + " (" + String (dbText (imd), 1) + " dB)");
@@ -847,6 +875,8 @@ bool measureAttackRelease (Ctx& c)
         };
 
         const double att = timeConstant (1), rel = timeConstant (2);
+        if (att > 0) c.metric ("attack_ms", ch, att * 1000.0, "ms");
+        if (rel > 0) c.metric ("release_ms", ch, rel * 1000.0, "ms");
         String line = c.prefix (ch);
         line << "  attack " << (att > 0 ? "~" + String (att * 1000.0, 1) + " ms" : String ("n/a"))
              << "   release " << (rel > 0 ? "~" + String (rel * 1000.0, 1) + " ms" : String ("n/a"))
@@ -1030,6 +1060,7 @@ bool measureHammerstein (Ctx& c)
 
         const int k1k = juce::jlimit (0, numBins - 1, (int) std::lround (1000.0 / binHz));
         gLine << "  G" << n << " " << String (gDb[(size_t) k1k], 1);
+        c.metric ("g" + String (n) + "_db_at_1khz", 0, gDb[(size_t) k1k], "dB");
     }
 
     c.out.info.add (gLine + " dB");
@@ -1112,6 +1143,9 @@ bool measureReverb (Ctx& c)
         };
 
         const double t30 = decayTime (-5.0, -35.0), t20 = decayTime (-5.0, -25.0), edt = decayTime (0.0, -10.0);
+        if (t30 > 0) c.metric ("rt60_t30_s", ch, t30, "s");
+        if (t20 > 0) c.metric ("rt60_t20_s", ch, t20, "s");
+        if (edt > 0) c.metric ("edt_s", ch, edt, "s");
         auto fmt = [] (double v) { return v > 0 ? String (v, 2) + " s" : String ("n/a"); };
         c.out.info.add (c.prefix (ch) + "  RT60 (T30) " + fmt (t30) + "   RT60 (T20) " + fmt (t20) + "   EDT " + fmt (edt));
 
@@ -1172,6 +1206,12 @@ bool measurePerformance (Ctx& c)
             l << "  " << (int) x[i] << ": " << String (v[i], v[i] < 1.0f ? 3 : 2);
         c.out.info.add (l);
     };
+
+    for (size_t i = 0; i < x.size(); ++i)
+    {
+        c.metric ("cpu_percent_block_" + String ((int) x[i]), -1, y[i], "%");
+        c.metric ("cpu_silence_percent_block_" + String ((int) x[i]), -1, ys[i], "%");
+    }
 
     if (! y.empty())
     {
@@ -1411,6 +1451,35 @@ bool measureSpecs (Ctx& c)
     else
     {
         add ("CPU (512-sample blocks)", "Signal / silence", "n/a");
+    }
+
+    // Numeric versions of the main rows (left channel unless the name says otherwise)
+    c.metric ("gain_db", 0, gain20, "dB");
+    if (reported >= 0) c.metric ("reported_latency_samples", -1, reported, "samples");
+    c.metric ("impulse_peak_offset_samples", 0, peakOffset, "samples");
+    c.metric ("dc_offset_dbfs", 0, gainToDb ((float) std::abs (mean), -200.0f), "dBFS");
+    c.metric ("response_deviation_db", 0, fMax - fMin, "dB");
+    c.metric ("low_minus3db_hz", 0, kLow * binHz, "Hz");
+    c.metric ("high_minus3db_hz", 0, juce::jmin (kHigh, N / 2) * binHz, "Hz");
+    c.metric ("thd_percent_at_minus1dbfs", 0, thd1.thd * 100.0, "%");
+    c.metric ("thdn_percent_at_minus1dbfs", 0, thd1.thdN * 100.0, "%");
+    c.metric ("thdn_percent_at_minus20dbfs", 0, thd20.thdN * 100.0, "%");
+    c.metric ("imd_percent", 0, imd * 100.0, "%");
+    c.metric ("non_harmonic_db_at_5khz", 0, gainToDb (alias[0], -200.0f), "dB");
+    c.metric ("non_harmonic_db_at_10khz", 0, gainToDb (alias[1], -200.0f), "dB");
+    c.metric ("idle_noise_dbfs", 0, dbfsFromMs (ms), "dBFS");
+    c.metric ("idle_noise_dbfs_a", 0, dbfsFromMs (msA), "dBFS(A)");
+    c.metric ("dynamic_range_db_aes17", 0, juce::jmin (dynamicRange, 300.0), "dB");
+    c.metric ("lr_gain_mismatch_db", -1, balance, "dB");
+    c.metric ("crosstalk_l_to_r_db_at_1khz", -1, xtalk[0][0], "dB");
+    c.metric ("crosstalk_l_to_r_db_at_10khz", -1, xtalk[0][1], "dB");
+    c.metric ("crosstalk_r_to_l_db_at_1khz", -1, xtalk[1][0], "dB");
+    c.metric ("true_peak_dbtp", 0, gainToDb (tp, -200.0f), "dBTP");
+    c.metric ("intersample_overshoot_db", 0, gainToDb (tp, -200.0f) - gainToDb (samplePeak, -200.0f), "dB");
+    if (tSig >= 0 && tSil >= 0)
+    {
+        c.metric ("cpu_percent_block_512", -1, 100.0 * tSig / audioSec, "%");
+        c.metric ("cpu_silence_percent_block_512", -1, 100.0 * tSil / audioSec, "%");
     }
 
     for (auto& r : rows)

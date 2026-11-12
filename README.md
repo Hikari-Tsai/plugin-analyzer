@@ -11,6 +11,8 @@
 
 ## 功能
 
+> 第一次使用、不確定每個指標在測什麼？請看 **[指標說明（docs/METRICS.md）](docs/METRICS.md)**：用白話解釋每個分頁、圖表怎麼看、什麼數值算好，以及常見情境該看哪裡。
+
 | 分頁 | 測試訊號 | 顯示內容 |
 |---|---|---|
 | **Linear** | Delta 脈衝 / 白噪音（H1 互頻譜估計） | 頻率響應、相位、群延遲、脈衝響應、聲道串音（L→R / R→L） |
@@ -42,6 +44,16 @@
 - 內建測試處理器（Gain、Peak EQ、Tanh 飽和、多項式、硬削波、壓縮器、延遲、簡易殘響），用來驗證或學習各種圖的意義。
 - 命令列啟動時可直接載入插件：
   `"Plugin Analyzer.app/Contents/MacOS/Plugin Analyzer" /path/to/MyPlugin.vst3`
+
+## 命令列（CLI）與 JSON
+
+`plugin-analyzer-cli` 不開介面，直接量測並輸出 JSON，適合寫腳本、放進 CI，或給 LLM 使用（之後的 MCP server 會用同一套格式）。
+
+```bash
+plugin-analyzer-cli measure thd --plugin builtin:saturator --param 1.1.drive=6 --points 0 --pretty
+```
+
+完整說明請看 **[docs/CLI.md](docs/CLI.md)**。
 
 ## 插件版（AAX / VST3 / AU）
 
@@ -86,7 +98,7 @@ build\PluginAnalyzerTests_artefacts\Release\PluginAnalyzerTests.exe
 - App：`build/PluginAnalyzer_artefacts/Release/`
 - 插件：`build/PluginAnalyzerPlugin_artefacts/Release/{VST3,AU,AAX}/`
 
-只想編其中一部分時，可以用 `-DPLUGIN_ANALYZER_BUILD_APP=OFF`、`-DPLUGIN_ANALYZER_BUILD_PLUGIN=OFF`、`-DPLUGIN_ANALYZER_BUILD_TESTS=OFF` 關掉。
+只想編其中一部分時，可以用 `-DPLUGIN_ANALYZER_BUILD_APP=OFF`、`-DPLUGIN_ANALYZER_BUILD_PLUGIN=OFF`、`-DPLUGIN_ANALYZER_BUILD_CLI=OFF`、`-DPLUGIN_ANALYZER_BUILD_TESTS=OFF` 關掉。
 
 ### GitHub Actions
 **什麼時候會建置：**
@@ -114,8 +126,8 @@ git push origin v1.2.0
 
 | Artifact | 內容 |
 |---|---|
-| `PluginAnalyzer-macOS` | `PluginAnalyzer-macOS-App.zip`、`-VST3.zip`、`-AU.zip`、`-AAX-unsigned.zip` |
-| `PluginAnalyzer-Windows` | `PluginAnalyzer-Windows-App.zip`、`-VST3.zip`、`-AAX-unsigned.zip` |
+| `PluginAnalyzer-macOS` | `PluginAnalyzer-macOS-App.zip`、`-VST3.zip`、`-AU.zip`、`-AAX-unsigned.zip`、`-CLI.zip` |
+| `PluginAnalyzer-Windows` | `PluginAnalyzer-Windows-App.zip`、`-VST3.zip`、`-AAX-unsigned.zip`、`-CLI.zip` |
 
 注意：
 - **AAX 沒有簽署**。下載後請用 PACE wraptool 簽署，Pro Tools 才會載入。
@@ -131,8 +143,11 @@ Source/
   host/       插件 chain、內建測試處理器、渲染器（含延遲補償與差值）
   engine/     背景量測執行緒
   core/       App 與插件共用的核心（設定、插件載入、Play 路由與實例同步）
+  api/        JSON 請求／回應介面（CLI 使用，之後的 MCP server 也會用）
+  cli/        plugin-analyzer-cli 的進入點
   plugin/     插件版的 AudioProcessor 與編輯器
   ui/         圖表、chain 面板、各分頁、設定
+docs/         METRICS.md：每個指標的白話說明；CLI.md：命令列與 JSON 格式
 Resources/    App 圖示（icon.png，由 tools/make_icon.py 產生）
 Tests/        AnalysisTests：以已知行為的處理器驗證量測結果
               PluginSmokeTest：像 DAW 一樣載入編好的 VST3，驗證 Play 路由、增益與延遲回報

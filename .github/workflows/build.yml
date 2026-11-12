@@ -34,11 +34,13 @@ jobs:
             configure: -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
             tests: build/PluginAnalyzerTests_artefacts/Release/PluginAnalyzerTests
             smoke: build/PluginSmokeTest_artefacts/Release/PluginSmokeTest
+            cli: build/PluginAnalyzerCli_artefacts/Release/plugin-analyzer-cli
           - os: windows-2022
             name: Windows
             configure: -G "Visual Studio 17 2022" -A x64
             tests: build/PluginAnalyzerTests_artefacts/Release/PluginAnalyzerTests.exe
             smoke: build/PluginSmokeTest_artefacts/Release/PluginSmokeTest.exe
+            cli: build/PluginAnalyzerCli_artefacts/Release/plugin-analyzer-cli.exe
 
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.name }}
@@ -72,6 +74,16 @@ jobs:
         shell: bash
         run: '"${{ matrix.smoke }}" "build/PluginAnalyzerPlugin_artefacts/Release/VST3/Plugin Analyzer.vst3"'
 
+      - name: CLI check (describe + one measurement, must return JSON without "error")
+        shell: bash
+        run: |
+          set -e
+          "${{ matrix.cli }}" describe > describe.json
+          "${{ matrix.cli }}" measure thd --plugin builtin:saturator --points 0 > thd.json
+          cat thd.json | head -c 600; echo
+          grep -q '"thd_percent"' thd.json
+          if grep -q '"error"' thd.json; then echo "CLI returned an error"; exit 1; fi
+
       # upload-artifact does not keep the Unix execute bit, which breaks macOS bundles,
       # so every bundle is zipped with ditto first (keeps permissions and the ad-hoc signature).
       - name: Package (macOS)
@@ -86,6 +98,7 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent "$PLUG/VST3/Plugin Analyzer.vst3"      "dist/PluginAnalyzer-macOS-VST3.zip"
           ditto -c -k --sequesterRsrc --keepParent "$PLUG/AU/Plugin Analyzer.component"   "dist/PluginAnalyzer-macOS-AU.zip"
           ditto -c -k --sequesterRsrc --keepParent "$PLUG/AAX/Plugin Analyzer.aaxplugin"  "dist/PluginAnalyzer-macOS-AAX-unsigned.zip"
+          ditto -c -k --keepParent "${{ matrix.cli }}"                                    "dist/PluginAnalyzer-macOS-CLI.zip"
           ls -l dist
 
       - name: Package (Windows)
@@ -99,6 +112,7 @@ jobs:
           Compress-Archive -Path "$app/Plugin Analyzer.exe"          -DestinationPath "dist/PluginAnalyzer-Windows-App.zip"
           Compress-Archive -Path "$plug/VST3/Plugin Analyzer.vst3"     -DestinationPath "dist/PluginAnalyzer-Windows-VST3.zip"
           Compress-Archive -Path "$plug/AAX/Plugin Analyzer.aaxplugin" -DestinationPath "dist/PluginAnalyzer-Windows-AAX-unsigned.zip"
+          Compress-Archive -Path "${{ matrix.cli }}"                   -DestinationPath "dist/PluginAnalyzer-Windows-CLI.zip"
           Get-ChildItem dist
 
       - name: Upload
@@ -144,14 +158,15 @@ jobs:
           [[ "$GITHUB_REF_NAME" == *-* ]] && FLAGS="--prerelease"   # e.g. v1.2.0-beta.1
           cat > notes.md <<'EOF'
           ### Downloads
-          | Platform | App | Plugins |
-          |---|---|---|
-          | macOS (universal) | `macOS-App` | `macOS-VST3`, `macOS-AU`, `macOS-AAX-unsigned` |
-          | Windows (x64) | `Windows-App` | `Windows-VST3`, `Windows-AAX-unsigned` |
+          | Platform | App | Plugins | Command line (JSON) |
+          |---|---|---|---|
+          | macOS (universal) | `macOS-App` | `macOS-VST3`, `macOS-AU`, `macOS-AAX-unsigned` | `macOS-CLI` |
+          | Windows (x64) | `Windows-App` | `Windows-VST3`, `Windows-AAX-unsigned` | `Windows-CLI` |
 
           - AAX builds are **not signed**: sign them with PACE wraptool before using them in Pro Tools.
           - macOS builds are ad-hoc signed only (not notarized). After downloading, remove the quarantine flag, e.g.
             `xattr -dr com.apple.quarantine "Plugin Analyzer.vst3"`.
+          - `plugin-analyzer-cli` runs measurements without a UI and prints JSON (see docs/CLI.md).
           - The complete source code (required by the AGPLv3 that applies to binaries built with JUCE) is attached
             by GitHub as "Source code" below. Third-party licenses are in the `Licenses` zip.
 

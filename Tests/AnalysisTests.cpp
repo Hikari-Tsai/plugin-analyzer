@@ -5,6 +5,7 @@
 #include "host/BuiltinProcessors.h"
 #include "host/PluginChain.h"
 #include "core/PlaybackRouter.h"
+#include "api/AnalyzerApi.h"
 
 #include <juce_events/juce_events.h>
 #include <iostream>
@@ -85,6 +86,24 @@ std::pair<int, float> routeImpulse (PlaybackRouter& router, int length = 4096)
         if (std::abs (buffer.getSample (0, i)) > std::abs (buffer.getSample (0, peak)))
             peak = i;
     return { peak, buffer.getSample (0, peak) };
+}
+
+/** Value of a metric in an API response (first match), NaN if absent. */
+double apiMetric (const juce::var& response, const juce::String& name, const juce::String& channel = "L")
+{
+    const auto* metrics = response["metrics"].getArray();
+    if (metrics != nullptr)
+        for (auto& m : *metrics)
+            if (m["name"].toString() == name && (m["channel"].toString() == channel || m["channel"].toString() == "all"))
+                return (double) m["value"];
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+juce::var parseJson (const juce::String& text)
+{
+    juce::var v;
+    juce::JSON::parse (text, v);
+    return v;
 }
 
 juce::String specText (const AnalysisResult& r, const juce::String& nameContains)
@@ -389,6 +408,53 @@ int main()
         setBuiltinParameter (*source, "q", 4.0f);   // mirror is gone: only a state copy can sync this
         copyProcessorState (*source, *target);
         check (near (value (*target, "q"), 4.0, 0.01), "full state copy");
+    }
+
+    std::cout << "JSON API (used by plugin-analyzer-cli and, later, MCP)" << std::endl;
+    {
+        // THD of y = x + 0.1 x^3 at amplitude 0.5, parameters given as text
+        auto r = api::run (parseJson (R"({
+            "mode": "thd",
+            "settings": { "harmonic_level_db": -6.0206, "harmonic_freq_hz": 1000 },
+            "chain1": [ { "plugin": "builtin:polynomial", "params": { "a2": "0", "a3": "0.1" } } ],
+            "max_points": 50
+        })"));
+        check (! r.hasProperty ("error"), "thd request succeeds " + r["error"].toString());
+        check (near (apiMetric (r, "thd_percent"), 0.6135, 0.001), "thd_percent = " + juce::String (apiMetric (r, "thd_percent"), 4));
+        check (near (apiMetric (r, "h3_dbc"), -44.2, 0.1), "h3_dbc = " + juce::String (apiMetric (r, "h3_dbc"), 2));
+        check (r["chains"][0]["slots"][0]["params"]["a3"].toString().startsWith ("0.1"),
+               "applied parameter is reported back: a3 = " + r["chains"][0]["slots"][0]["params"]["a3"].toString());
+
+        const auto& curve = r["curves"][0];
+        check (curve["kind"].toString() == "spectrum" && curve["points"].size() <= 50, "spectrum reduced to <= 50 points");
+        bool peakKept = false;
+        for (auto& pt : *curve["points"].getArray())
+            peakKept = peakKept || ((double) pt[1] > -7.0 && std::abs ((double) pt[0] - 1000.0) < 20.0);
+        check (peakKept, "the fundamental peak survives the reduction");
+        check (! r.hasProperty ("error") && api::toJson (r, false).length() < 30000, "response stays compact ("
+               + juce::String (api::toJson (r, false).length()) + " bytes)");
+    }
+    {
+        auto r = api::run (parseJson (R"({ "mode": "specs", "max_points": 0 })"));
+        check (near (apiMetric (r, "gain_db"), 0.0, 1e-6) && ! r.hasProperty ("curves"), "specs on an empty chain: gain_db 0, no curves");
+        check (r["specs"].size() > 15, "specs table rows included (" + juce::String (r["specs"].size()) + ")");
+    }
+    {
+        auto r = api::run (parseJson (R"({ "mode": "attack_release", "chain1": [ "builtin:compressor" ], "max_points": 0 })"));
+        check (apiMetric (r, "attack_ms") > 1.0 && apiMetric (r, "release_ms") > apiMetric (r, "attack_ms"),
+               "compressor attack " + juce::String (apiMetric (r, "attack_ms"), 1) + " ms < release "
+               + juce::String (apiMetric (r, "release_ms"), 1) + " ms");
+    }
+    {
+        auto bad = [] (const char* json) { return api::run (parseJson (json))["error"].toString(); };
+        check (bad (R"({ "mode": "nope" })").contains ("Modes:"), "unknown mode lists the valid modes");
+        check (bad (R"({ "mode": "thd", "settings": { "freq": 1 } })").contains ("Unknown setting"), "unknown setting is rejected");
+        check (bad (R"({ "mode": "thd", "settings": { "harmonic_freq_hz": -5 } })").contains ("between"), "out-of-range setting is rejected");
+        check (bad (R"({ "mode": "thd", "chain1": [ { "plugin": "builtin:gain", "params": { "volume": "3" } } ] })").contains ("Parameters: Gain"),
+               "unknown parameter lists the plugin's parameters");
+        check (bad (R"({ "mode": "thd", "chain1": [ "builtin:nope" ] })").contains ("builtin:gain"), "unknown built-in lists the built-ins");
+        check (bad (R"({ "mode": "linear", "difference": true })").contains ("chain2"), "difference needs chain2");
+        check (api::describe()["modes"].size() == 14 && api::describe()["settings"].size() > 30, "describe lists modes and settings");
     }
 
     std::cout << (failures == 0 ? "\nAll checks passed." : "\nSome checks FAILED.") << std::endl;

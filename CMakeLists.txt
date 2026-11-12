@@ -150,6 +150,35 @@ if(PLUGIN_ANALYZER_BUILD_PLUGIN)
 endif()
 
 # ---------------------------------------------------------------------------
+# plugin-analyzer-cli: headless measurements with JSON output (see docs/CLI.md).
+# The same JSON API (Source/api) is meant to back an MCP server.
+# ---------------------------------------------------------------------------
+option(PLUGIN_ANALYZER_BUILD_CLI "Build plugin-analyzer-cli" ON)
+
+if(PLUGIN_ANALYZER_BUILD_CLI)
+    juce_add_console_app(PluginAnalyzerCli
+        PRODUCT_NAME "plugin-analyzer-cli"
+        COMPANY_NAME "${COMPANY}"
+        COMPANY_COPYRIGHT "${COPYRIGHT}"
+        BUNDLE_ID "com.hmusic.pluginanalyzer.cli"
+        VERSION ${PROJECT_VERSION}
+        PLUGINHOST_AU TRUE)
+    set_target_properties(PluginAnalyzerCli PROPERTIES OUTPUT_NAME "plugin-analyzer-cli")   # console apps ignore PRODUCT_NAME
+    target_sources(PluginAnalyzerCli PRIVATE ${CORE_SOURCES} Source/api/AnalyzerApi.cpp Source/cli/CliMain.cpp)
+    target_include_directories(PluginAnalyzerCli PRIVATE Source)
+    target_compile_definitions(PluginAnalyzerCli PRIVATE
+        ${COMMON_DEFINITIONS}
+        PLUGIN_ANALYZER_VERSION_STRING="${PROJECT_VERSION}")
+    target_link_libraries(PluginAnalyzerCli
+        PRIVATE
+            juce::juce_audio_processors
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+endif()
+
+# ---------------------------------------------------------------------------
 # Headless test runner: verifies the measurement maths with built-in processors
 # ---------------------------------------------------------------------------
 option(PLUGIN_ANALYZER_BUILD_TESTS "Build the analysis test runner" ON)
@@ -161,11 +190,12 @@ if(PLUGIN_ANALYZER_BUILD_TESTS)
         COMPANY_COPYRIGHT "${COPYRIGHT}"
         BUNDLE_ID "com.hmusic.pluginanalyzer.tests")
     target_sources(PluginAnalyzerTests PRIVATE ${CORE_SOURCES} Tests/AnalysisTests.cpp
-        Source/engine/AnalysisEngine.cpp Source/core/PlaybackRouter.cpp)
+        Source/engine/AnalysisEngine.cpp Source/core/PlaybackRouter.cpp Source/api/AnalyzerApi.cpp)
     target_include_directories(PluginAnalyzerTests PRIVATE Source)
     target_compile_definitions(PluginAnalyzerTests PRIVATE
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
-        JUCE_PLUGINHOST_VST3=0 JUCE_PLUGINHOST_AU=0)
+        JUCE_PLUGINHOST_VST3=0 JUCE_PLUGINHOST_AU=0
+        PLUGIN_ANALYZER_VERSION_STRING="${PROJECT_VERSION}")
     target_link_libraries(PluginAnalyzerTests
         PRIVATE
             juce::juce_audio_processors

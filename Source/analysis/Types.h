@@ -95,6 +95,16 @@ struct SpecItem
     juce::String note;
 };
 
+/** A named numeric result (e.g. thd_percent) for scripts, the CLI and LLM tools. */
+struct Metric
+{
+    juce::String name;
+    int chain = 0;
+    int channel = -1;       // -1 = whole chain, 0 = L/Mid, 1 = R/Side
+    double value = 0.0;
+    juce::String unit;
+};
+
 struct AnalysisResult
 {
     Mode mode = Mode::Linear;
@@ -104,6 +114,7 @@ struct AnalysisResult
     std::vector<Curve> curves;
     std::vector<Heatmap> heatmaps;
     std::vector<SpecItem> specs;
+    std::vector<Metric> metrics;
     juce::StringArray info;
 };
 
