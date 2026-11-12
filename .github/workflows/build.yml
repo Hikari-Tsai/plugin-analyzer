@@ -1,0 +1,162 @@
+name: Build
+
+# Builds run only when something that affects the binaries changes.
+# Documentation-only changes (README, ACKNOWLEDGEMENTS, LICENSE, third_party_licenses/, tools/) do not build.
+# Pushing a tag that starts with "v" (e.g. v1.2.0) always builds and publishes a GitHub Release
+# (GitHub does not evaluate path filters for tag pushes).
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+    paths:
+      - "Source/**"
+      - "Tests/**"
+      - "Resources/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/build.yml"
+  pull_request:
+    paths:
+      - "Source/**"
+      - "Tests/**"
+      - "Resources/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/build.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            name: macOS
+            configure: -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+            tests: build/PluginAnalyzerTests_artefacts/Release/PluginAnalyzerTests
+            smoke: build/PluginSmokeTest_artefacts/Release/PluginSmokeTest
+          - os: windows-2022
+            name: Windows
+            configure: -G "Visual Studio 17 2022" -A x64
+            tests: build/PluginAnalyzerTests_artefacts/Release/PluginAnalyzerTests.exe
+            smoke: build/PluginSmokeTest_artefacts/Release/PluginSmokeTest.exe
+
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # v1.2.3 -> 1.2.3 (a suffix such as -beta.1 is dropped: CMake versions are numeric)
+      - name: Version from tag
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            V="${GITHUB_REF_NAME#v}"; V="${V%%-*}"
+            echo "VERSION_ARG=-DPLUGIN_ANALYZER_VERSION=$V" >> "$GITHUB_ENV"
+            echo "Building version $V"
+          fi
+
+      - name: Configure (downloads JUCE 8.0.6, which bundles the AAX SDK)
+        shell: bash
+        run: cmake -S . -B build ${{ matrix.configure }} $VERSION_ARG
+
+      - name: Build app, plugins (AAX / VST3 / AU) and tests
+        shell: bash
+        run: cmake --build build --config Release --parallel
+
+      - name: Run analysis tests
+        shell: bash
+        run: '"${{ matrix.tests }}"'
+
+      - name: Plugin smoke test (loads the built VST3 like a DAW)
+        shell: bash
+        run: '"${{ matrix.smoke }}" "build/PluginAnalyzerPlugin_artefacts/Release/VST3/Plugin Analyzer.vst3"'
+
+      # upload-artifact does not keep the Unix execute bit, which breaks macOS bundles,
+      # so every bundle is zipped with ditto first (keeps permissions and the ad-hoc signature).
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -e
+          mkdir -p dist
+          APP="build/PluginAnalyzer_artefacts/Release"
+          PLUG="build/PluginAnalyzerPlugin_artefacts/Release"
+          ditto -c -k --sequesterRsrc --keepParent "$APP/Plugin Analyzer.app"            "dist/PluginAnalyzer-macOS-App.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$PLUG/VST3/Plugin Analyzer.vst3"      "dist/PluginAnalyzer-macOS-VST3.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$PLUG/AU/Plugin Analyzer.component"   "dist/PluginAnalyzer-macOS-AU.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$PLUG/AAX/Plugin Analyzer.aaxplugin"  "dist/PluginAnalyzer-macOS-AAX-unsigned.zip"
+          ls -l dist
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $app  = "build/PluginAnalyzer_artefacts/Release"
+          $plug = "build/PluginAnalyzerPlugin_artefacts/Release"
+          Compress-Archive -Path "$app/Plugin Analyzer.exe"          -DestinationPath "dist/PluginAnalyzer-Windows-App.zip"
+          Compress-Archive -Path "$plug/VST3/Plugin Analyzer.vst3"     -DestinationPath "dist/PluginAnalyzer-Windows-VST3.zip"
+          Compress-Archive -Path "$plug/AAX/Plugin Analyzer.aaxplugin" -DestinationPath "dist/PluginAnalyzer-Windows-AAX-unsigned.zip"
+          Get-ChildItem dist
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: PluginAnalyzer-${{ matrix.name }}
+          path: dist/*.zip
+          if-no-files-found: error
+
+  # Only for v* tags, and only after both platforms built and passed their tests.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Name assets after the tag and add license files
+        shell: bash
+        run: |
+          set -e
+          cd dist
+          for f in PluginAnalyzer-*.zip; do mv "$f" "${f/PluginAnalyzer-/PluginAnalyzer-${GITHUB_REF_NAME}-}"; done
+          (cd .. && zip -qr "dist/PluginAnalyzer-${GITHUB_REF_NAME}-Licenses.zip" LICENSE ACKNOWLEDGEMENTS.md third_party_licenses)
+          ls -l
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          FLAGS=""
+          [[ "$GITHUB_REF_NAME" == *-* ]] && FLAGS="--prerelease"   # e.g. v1.2.0-beta.1
+          cat > notes.md <<'EOF'
+          ### Downloads
+          | Platform | App | Plugins |
+          |---|---|---|
+          | macOS (universal) | `macOS-App` | `macOS-VST3`, `macOS-AU`, `macOS-AAX-unsigned` |
+          | Windows (x64) | `Windows-App` | `Windows-VST3`, `Windows-AAX-unsigned` |
+
+          - AAX builds are **not signed**: sign them with PACE wraptool before using them in Pro Tools.
+          - macOS builds are ad-hoc signed only (not notarized). After downloading, remove the quarantine flag, e.g.
+            `xattr -dr com.apple.quarantine "Plugin Analyzer.vst3"`.
+          - The complete source code (required by the AGPLv3 that applies to binaries built with JUCE) is attached
+            by GitHub as "Source code" below. Third-party licenses are in the `Licenses` zip.
+
+          EOF
+          gh release create "$GITHUB_REF_NAME" dist/*.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Plugin Analyzer $GITHUB_REF_NAME" \
+            --notes-file notes.md --generate-notes $FLAGS
