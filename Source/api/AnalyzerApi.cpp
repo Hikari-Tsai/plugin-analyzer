@@ -544,6 +544,38 @@ void warmUp (PluginChain& chain)
 } // namespace
 
 //==============================================================================
+String modeName (const AnalysisSettings& s)
+{
+    for (auto& m : modes())
+    {
+        auto probe = s;
+        m.apply (probe);
+        if (probe.mode == s.mode && probe.harmonicMode == s.harmonicMode
+            && probe.oscWaveshaper == s.oscWaveshaper && probe.dynamicsMode == s.dynamicsMode)
+            return m.name;
+    }
+    return {};
+}
+
+var parameters (juce::AudioProcessor& p, const String& filter)
+{
+    auto all = parameterList (p);
+    if (filter.isEmpty())
+        return all;
+
+    juce::Array<var> matching;
+    for (auto& param : *all.getArray())
+        if (param["name"].toString().containsIgnoreCase (filter) || param["id"].toString().containsIgnoreCase (filter))
+            matching.add (param);
+    return var (matching);
+}
+
+bool setParameters (juce::AudioProcessor& p, const var& params, var& applied, String& error)
+{
+    return applyParams (p, params, applied, error);
+}
+
+//==============================================================================
 juce::Array<juce::File> pluginFolders()
 {
     juce::Array<juce::File> folders;

@@ -9,6 +9,8 @@
 namespace pa
 {
 
+class LiveServer;
+
 /** Everything that must outlive the UI: settings, plugin list, analysis engine and the
     chains' contents. Owned by the standalone app or by the plugin's AudioProcessor, so that
     in a DAW the editor window can be closed and reopened without losing anything. */
@@ -31,6 +33,19 @@ public:
     PlaybackRouter playback { engine };
 
     juce::PropertiesFile& props() { return *appProperties.getUserSettings(); }
+
+    //==============================================================================
+    // Live control by local tools (MCP). Off unless the user enables it in Settings.
+    /** e.g. "Pro Tools (AAX)"; set by the owner before startLiveControlIfEnabled(). */
+    juce::String hostDescription;
+    /** Captures the main window; set by the UI while it exists (message thread only). */
+    std::function<juce::Image()> snapshotProvider;
+
+    void startLiveControlIfEnabled();
+    void setLiveControlEnabled (bool shouldBeEnabled);
+    bool isLiveControlEnabled() const;
+    int getLiveControlPort() const;
+    void setTrackName (const juce::String& name);
 
     struct Listener
     {
@@ -66,6 +81,8 @@ private:
     void applyStoredSettings();
     bool wantsTwins() const { return hostType == HostType::Plugin; }
 
+    std::unique_ptr<LiveServer> live;
+    juce::String trackName;
     bool shuttingDown = false;   // no callbacks / latency updates while the destructor clears the chains
     std::map<int, std::unique_ptr<ParamMirror>> mirrors;     // key = chain * 16 + slot
     std::map<int, juce::MemoryBlock> lastSyncedState;

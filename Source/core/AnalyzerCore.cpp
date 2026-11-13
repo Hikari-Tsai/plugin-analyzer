@@ -1,5 +1,6 @@
 #include "AnalyzerCore.h"
 #include "host/BuiltinProcessors.h"
+#include "live/LiveServer.h"
 
 namespace pa
 {
@@ -31,6 +32,7 @@ AnalyzerCore::AnalyzerCore (HostType type) : hostType (type)
 AnalyzerCore::~AnalyzerCore()
 {
     *alive = false;
+    live.reset();   // stop answering local tools before anything else goes away
     shuttingDown = true;
     playback.onLatencyChanged = nullptr;
     stopTimer();
@@ -39,6 +41,40 @@ AnalyzerCore::~AnalyzerCore()
     clearAll();
     mirrors.clear();
     appProperties.saveIfNeeded();
+}
+
+void AnalyzerCore::startLiveControlIfEnabled()
+{
+    if (props().getBoolValue ("liveControl", false) && live == nullptr)
+    {
+        live = std::make_unique<LiveServer> (*this);
+        if (! live->start())
+            live.reset();
+        else if (trackName.isNotEmpty())
+            live->setTrackName (trackName);
+    }
+}
+
+void AnalyzerCore::setLiveControlEnabled (bool shouldBeEnabled)
+{
+    props().setValue ("liveControl", shouldBeEnabled);
+    appProperties.saveIfNeeded();
+
+    if (shouldBeEnabled)
+        startLiveControlIfEnabled();
+    else
+        live.reset();
+}
+
+bool AnalyzerCore::isLiveControlEnabled() const { return live != nullptr; }
+
+int AnalyzerCore::getLiveControlPort() const { return live != nullptr ? live->getPort() : 0; }
+
+void AnalyzerCore::setTrackName (const juce::String& name)
+{
+    trackName = name;
+    if (live != nullptr)
+        live->setTrackName (name);
 }
 
 void AnalyzerCore::applyStoredSettings()

@@ -36,6 +36,8 @@ public:
     const juce::String getProgramName (int) override { return {}; }
     void changeProgramName (int, const juce::String&) override {}
 
+    void updateTrackProperties (const TrackProperties&) override;   // track name for MCP discovery
+
     void getStateInformation (juce::MemoryBlock&) override;
     void setStateInformation (const void*, int) override;
 

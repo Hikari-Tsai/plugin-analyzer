@@ -109,10 +109,18 @@ MainComponent::MainComponent (AnalyzerCore& c) : core (c), engine (c.engine)
     engine.updateSettings ([mode] (AnalysisSettings& s) { s.mode = mode; });
 
     setSize (1320, 860);
+
+    // Lets local tools (MCP) see what the user sees
+    juce::Component::SafePointer<MainComponent> self (this);
+    core.snapshotProvider = [self]
+    {
+        return self != nullptr ? self->createComponentSnapshot (self->getLocalBounds(), true, 1.0f) : juce::Image();
+    };
 }
 
 MainComponent::~MainComponent()
 {
+    core.snapshotProvider = nullptr;
     engine.removeChangeListener (this);
     pluginListWindow.reset();
     chainPanel.closeAllEditors();
@@ -179,7 +187,13 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster*)
     String text;
     text << String (s.sampleRate / 1000.0, 1) << " kHz  |  FFT " << s.fftSize() << "  |  block " << s.blockSize;
     if (isPlugin())
+    {
         text << "  |  DAW latency " << core.playback.getReportedLatency() << " smp";
+        if (playSelect.getSelected() != core.playback.getPlayChain() + 1)   // may be changed remotely (MCP)
+            playSelect.setSelected (core.playback.getPlayChain() + 1, false);
+    }
+    if (core.isLiveControlEnabled())
+        text << "  |  MCP on";
     if (lastResultTime != 0)
         text << "  |  update " << (int) (now - lastResultTime) << " ms";
     status.setText (text, juce::dontSendNotification);
@@ -196,6 +210,14 @@ void MainComponent::showSettings()
             t->sampleRateChanged (sr);
     };
     content->onShowPluginList = [this] { showPluginList(); };
+    content->setLiveControlState (core.isLiveControlEnabled(), core.getLiveControlPort());
+    juce::Component::SafePointer<SettingsComponent> settingsView (content);
+    content->onLiveControlChanged = [this, settingsView] (bool enabled)
+    {
+        core.setLiveControlEnabled (enabled);
+        if (settingsView != nullptr)
+            settingsView->setLiveControlState (core.isLiveControlEnabled(), core.getLiveControlPort());
+    };
     content->setReloadSessionVisible (core.hostType == AnalyzerCore::HostType::App);
 
     juce::DialogWindow::LaunchOptions o;

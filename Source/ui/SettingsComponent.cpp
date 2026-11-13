@@ -8,6 +8,13 @@ static const double rates[] = { 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 19
 static const int blockSizes[] = { 32, 64, 128, 256, 512, 1024, 2048, 4096 };
 static const int paces[] = { 0, 30, 200, 1000 };
 
+void SettingsComponent::setLiveControlState (bool enabled, int port)
+{
+    liveControl.setToggleState (enabled, juce::dontSendNotification);
+    liveControl.setButtonText (enabled ? "Allow LLM control (MCP) - on, port " + juce::String (port)
+                                       : juce::String ("Allow LLM control (MCP) of this window"));
+}
+
 void SettingsComponent::setReloadSessionVisible (bool shouldBeVisible)
 {
     reloadSession.setVisible (shouldBeVisible);
@@ -52,7 +59,13 @@ SettingsComponent::SettingsComponent (AnalysisEngine& e, juce::PropertiesFile& p
     addRow ("Processing block size", blockSize);
     addRow ("Measurement pace", pace);
     addRow ({}, reloadSession);
+    addRow ({}, liveControl);
     addRow ({}, pluginListButton);
+
+    liveControl.setTooltip ("Lets local tools such as the plugin-analyzer-cli MCP server read this window's chains and "
+                            "results, measure, change parameters and take screenshots. Local connections only, "
+                            "protected by a per-session token. See docs/MCP.md.");
+    liveControl.onClick = [this] { if (onLiveControlChanged) onLiveControlChanged (liveControl.getToggleState()); };
 
     sampleRate.onChange = [this]
     {

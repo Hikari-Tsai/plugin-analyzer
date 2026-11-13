@@ -78,7 +78,12 @@ def main():
 
     print("Tools")
     tools = {t["name"]: t for t in c.send("tools/list")["result"]["tools"]}
-    check(set(tools) == {"describe", "list_plugins", "plugin_info", "measure"}, "tools: " + ", ".join(sorted(tools)))
+    expected = {"describe", "list_plugins", "plugin_info", "measure", "list_instances", "instance_state",
+                "instance_parameters", "instance_measure", "instance_set_parameters", "instance_load_plugin",
+                "instance_remove_plugin", "instance_set_bypass", "instance_set_play", "instance_snapshot"}
+    check(set(tools) == expected, f"{len(tools)} tools: " + ", ".join(sorted(tools)))
+    check(not tools["instance_remove_plugin"]["annotations"]["readOnlyHint"]
+          and tools["instance_remove_plugin"]["annotations"]["destructiveHint"], "tools that change things are annotated")
     modes = tools["measure"]["inputSchema"]["properties"]["mode"]["enum"]
     check("thd" in modes and "specs" in modes and len(modes) == 14, f"measure.mode enum has {len(modes)} modes")
 
@@ -123,6 +128,13 @@ def main():
     check(any(x["uri"] == "plugin-analyzer://guide" for x in res), "guide resource listed")
     g = c.send("resources/read", {"uri": "plugin-analyzer://guide"})["result"]["contents"][0]
     check("Choosing a mode" in g["text"], "guide resource readable")
+    li = c.call("list_instances", {})
+    instances = li["structuredContent"]["instances"]
+    check(not li["isError"], f"list_instances works ({len(instances)} running)")
+    if not instances:
+        r = c.call("instance_state", {})
+        check(r["isError"] and "Allow LLM control" in r["content"][0]["text"], "instance tools explain how to enable live control")
+    check(all("token" not in json.dumps(i) for i in instances), "tokens are never shown to the client")
     lp = c.call("list_plugins", {"filter": ""})
     check(not lp["isError"], f"list_plugins works ({lp['structuredContent']['count']} plugins found)")
 

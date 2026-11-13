@@ -14,6 +14,8 @@ public:
         pa::Theme::applyToDefaultLookAndFeel();
 
         core = std::make_unique<pa::AnalyzerCore> (pa::AnalyzerCore::HostType::App);
+        core->hostDescription = "Plugin Analyzer app";
+        core->startLiveControlIfEnabled();
         mainWindow = std::make_unique<MainWindow> (getApplicationName(), *core);
 
         // Restore the previous session (plugins + their state)

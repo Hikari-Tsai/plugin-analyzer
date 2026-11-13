@@ -47,7 +47,7 @@
 
 ## 命令列（CLI）與 JSON
 
-`plugin-analyzer-cli` 不開介面，直接量測並輸出 JSON，適合寫腳本、放進 CI，或給 LLM 使用（之後的 MCP server 會用同一套格式）。
+`plugin-analyzer-cli` 不開介面，直接量測並輸出 JSON，適合寫腳本、放進 CI，或給 LLM 使用（MCP server 也用同一套格式）。
 
 ```bash
 plugin-analyzer-cli measure thd --plugin builtin:saturator --param 1.1.drive=6 --points 0 --pretty
@@ -61,6 +61,8 @@ plugin-analyzer-cli measure thd --plugin builtin:saturator --param 1.1.drive=6 -
 ```bash
 claude mcp add plugin-analyzer -- /完整路徑/plugin-analyzer-cli mcp
 ```
+
+LLM 也可以操作**你正在用的視窗**（App，或 Pro Tools 等 DAW 裡的插件）：讀取你的設定、量測、調參數、擷取畫面。這個功能要先在 Settings 勾選「Allow LLM control (MCP)」才會開啟。
 
 設定方式、提供的工具和安全性說明，請看 **[docs/MCP.md](docs/MCP.md)**。
 
@@ -152,7 +154,8 @@ Source/
   host/       插件 chain、內建測試處理器、渲染器（含延遲補償與差值）
   engine/     背景量測執行緒
   core/       App 與插件共用的核心（設定、插件載入、Play 路由與實例同步）
-  api/        JSON 請求／回應介面（CLI 使用，之後的 MCP server 也會用）
+  api/        JSON 請求／回應介面（CLI 與 MCP server 使用）
+  live/       讓本機工具（MCP）操作正在執行的 App 或插件
   cli/        plugin-analyzer-cli 的進入點和 MCP server
   plugin/     插件版的 AudioProcessor 與編輯器
   ui/         圖表、chain 面板、各分頁、設定
@@ -161,6 +164,7 @@ Resources/    App 圖示（icon.png，由 tools/make_icon.py 產生）
 Tests/        AnalysisTests：以已知行為的處理器驗證量測結果
               PluginSmokeTest：像 DAW 一樣載入編好的 VST3，驗證 Play 路由、增益與延遲回報
               mcp_smoke.py：用 MCP 協定完整測試 MCP server
+              live_smoke.py：透過 MCP 操作正在執行的視窗（本機執行）
 ```
 
 ## 授權

@@ -14,6 +14,23 @@ AnalyzerPluginProcessor::AnalyzerPluginProcessor()
 
     // Report the latency of the slower chain; the router aligns the other paths to it.
     core.playback.onLatencyChanged = [this] (int samples) { setLatencySamples (samples); };
+
+    core.hostDescription = juce::PluginHostType().getHostDescription() + juce::String (" (")
+                         + juce::AudioProcessor::getWrapperTypeDescription (wrapperType) + ")";
+    core.startLiveControlIfEnabled();
+}
+
+void AnalyzerPluginProcessor::updateTrackProperties (const TrackProperties& properties)
+{
+    if (properties.name.has_value())
+    {
+        const auto name = *properties.name;
+        juce::MessageManager::callAsync ([this, name, weak = std::weak_ptr<bool> (alive)]
+        {
+            if (! weak.expired())
+                core.setTrackName (name);
+        });
+    }
 }
 
 void AnalyzerPluginProcessor::prepareToPlay (double sampleRate, int maximumBlockSize)

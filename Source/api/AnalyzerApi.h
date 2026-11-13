@@ -46,6 +46,17 @@ juce::var resultToJson (const AnalysisResult& result, int maxPoints);
 /** Applies a JSON object of settings; returns false with a message for unknown keys or bad values. */
 bool applySettings (AnalysisSettings& settings, const juce::var& json, juce::String& error);
 
+/** API name of the mode the settings select ("thd", "specs", ...). */
+juce::String modeName (const AnalysisSettings& settings);
+
+/** A processor's parameters (index, id, name, value text, normalized), optionally filtered
+    by a case-insensitive part of the name. */
+juce::var parameters (juce::AudioProcessor& processor, const juce::String& filter = {});
+
+/** Sets parameters from { "name or id": "text value" | { "normalized": x } };
+    `applied` receives what each parameter ended up at. */
+bool setParameters (juce::AudioProcessor& processor, const juce::var& params, juce::var& applied, juce::String& error);
+
 /** Sets the measurement mode from its API name ("thd", "specs", ...). */
 bool applyMode (AnalysisSettings& settings, const juce::String& mode, juce::String& error);
 

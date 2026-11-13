@@ -27,6 +27,12 @@ public:
     /** Paused engines measure nothing (used when a plugin instance has no open editor). */
     void setPaused (bool shouldPause) { paused = shouldPause; notify(); }
 
+    /** Runs one measurement with these settings on the analysis thread, between the
+        continuous measurements (also while paused), and waits for it. The continuous
+        settings (and so the UI) are not touched. Sample rate and block size are the
+        engine's own. Returns nullptr on timeout or if it was aborted. Any thread. */
+    std::shared_ptr<const AnalysisResult> measureOnce (AnalysisSettings settings, int timeoutMs);
+
     /** Hold this while changing a chain's contents from the message thread.
         It makes the analysis thread abandon its current measurement promptly. */
     class EditScope
@@ -61,6 +67,18 @@ private:
     std::array<PluginChain, 2> chains;
     std::atomic<int> pendingEdits { 0 };
     std::atomic<bool> paused { false };
+
+    struct OnceRequest
+    {
+        AnalysisSettings settings;
+        std::shared_ptr<AnalysisResult> result;
+        bool ok = false;
+        juce::WaitableEvent done;
+    };
+    bool runPendingOnce();
+    juce::CriticalSection onceLock, oneAtATime;
+    std::shared_ptr<OnceRequest> pendingOnce;
+    std::atomic<bool> oncePending { false };   // interrupts the continuous measurement
     double preparedRate = 0.0;
 
     mutable juce::SpinLock resultLock;

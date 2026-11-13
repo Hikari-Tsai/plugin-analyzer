@@ -43,6 +43,8 @@ set(CORE_SOURCES
 set(UI_SOURCES
     Source/core/AnalyzerCore.cpp
     Source/core/PlaybackRouter.cpp
+    Source/live/LiveServer.cpp
+    Source/api/AnalyzerApi.cpp
     Source/MainComponent.cpp
     Source/engine/AnalysisEngine.cpp
     Source/ui/PlotComponents.cpp
@@ -58,6 +60,7 @@ set(COMMON_DEFINITIONS
     JUCE_PLUGINHOST_LADSPA=0
     JUCE_PLUGINHOST_LV2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0
+    PLUGIN_ANALYZER_VERSION_STRING="${PROJECT_VERSION}"
 )
 
 set(COMPANY "HMusic")
@@ -166,9 +169,7 @@ if(PLUGIN_ANALYZER_BUILD_CLI)
     set_target_properties(PluginAnalyzerCli PROPERTIES OUTPUT_NAME "plugin-analyzer-cli")   # console apps ignore PRODUCT_NAME
     target_sources(PluginAnalyzerCli PRIVATE ${CORE_SOURCES} Source/api/AnalyzerApi.cpp Source/cli/CliMain.cpp Source/cli/McpServer.cpp)
     target_include_directories(PluginAnalyzerCli PRIVATE Source)
-    target_compile_definitions(PluginAnalyzerCli PRIVATE
-        ${COMMON_DEFINITIONS}
-        PLUGIN_ANALYZER_VERSION_STRING="${PROJECT_VERSION}")
+    target_compile_definitions(PluginAnalyzerCli PRIVATE ${COMMON_DEFINITIONS})
     target_link_libraries(PluginAnalyzerCli
         PRIVATE
             juce::juce_audio_processors
