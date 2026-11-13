@@ -35,12 +35,14 @@ jobs:
             tests: build/PluginAnalyzerTests_artefacts/Release/PluginAnalyzerTests
             smoke: build/PluginSmokeTest_artefacts/Release/PluginSmokeTest
             cli: build/PluginAnalyzerCli_artefacts/Release/plugin-analyzer-cli
+            python: python3
           - os: windows-2022
             name: Windows
             configure: -G "Visual Studio 17 2022" -A x64
             tests: build/PluginAnalyzerTests_artefacts/Release/PluginAnalyzerTests.exe
             smoke: build/PluginSmokeTest_artefacts/Release/PluginSmokeTest.exe
             cli: build/PluginAnalyzerCli_artefacts/Release/plugin-analyzer-cli.exe
+            python: python
 
     runs-on: ${{ matrix.os }}
     name: ${{ matrix.name }}
@@ -83,6 +85,10 @@ jobs:
           cat thd.json | head -c 600; echo
           grep -q '"thd_percent"' thd.json
           if grep -q '"error"' thd.json; then echo "CLI returned an error"; exit 1; fi
+
+      - name: MCP server test (speaks the protocol over stdio)
+        shell: bash
+        run: ${{ matrix.python }} Tests/mcp_smoke.py "${{ matrix.cli }}"
 
       # upload-artifact does not keep the Unix execute bit, which breaks macOS bundles,
       # so every bundle is zipped with ditto first (keeps permissions and the ad-hoc signature).
@@ -167,6 +173,7 @@ jobs:
           - macOS builds are ad-hoc signed only (not notarized). After downloading, remove the quarantine flag, e.g.
             `xattr -dr com.apple.quarantine "Plugin Analyzer.vst3"`.
           - `plugin-analyzer-cli` runs measurements without a UI and prints JSON (see docs/CLI.md).
+            `plugin-analyzer-cli mcp` is an MCP server for LLM clients such as Claude (see docs/MCP.md).
           - The complete source code (required by the AGPLv3 that applies to binaries built with JUCE) is attached
             by GitHub as "Source code" below. Third-party licenses are in the `Licenses` zip.
 

@@ -4,7 +4,7 @@
 
 - 寫腳本批次量測多個插件或多組參數
 - 在 CI 裡做插件的回歸測試（例如「THD 不能超過 0.01%」）
-- 給其他程式或 LLM 使用（之後的 MCP server 會用同一套 JSON 格式）
+- 給其他程式或 LLM 使用（MCP server 的 `measure` 工具使用同一套 JSON 格式，見 [MCP.md](MCP.md)）
 
 每個量測的意思請看 [METRICS.md](METRICS.md)。
 
@@ -51,6 +51,12 @@ plugin-analyzer-cli measure <mode> [選項]
 **插件的寫法：** `builtin:<id>`（內建測試處理器，例如 `builtin:saturator`），或 `.vst3` / `.component` 的路徑。
 
 **參數值：** 用文字給，由插件自己解讀，例如 `6`、`6 dB`、`Warm Tape`。也可以在 JSON 請求裡用 `{ "normalized": 0.25 }` 直接指定 0–1 的原始值。輸出會回報每個參數**實際被設成什麼**，方便確認插件有沒有正確解讀。
+
+### `mcp`：以 MCP server 執行
+```bash
+plugin-analyzer-cli mcp [--allow-dir <資料夾>]... [--allow-any-path]
+```
+給 Claude 等 LLM 用戶端使用，透過 stdio 走 MCP 協定。設定方式見 [MCP.md](MCP.md)。
 
 ### `run`：執行 JSON 請求檔
 ```bash

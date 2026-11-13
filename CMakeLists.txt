@@ -164,7 +164,7 @@ if(PLUGIN_ANALYZER_BUILD_CLI)
         VERSION ${PROJECT_VERSION}
         PLUGINHOST_AU TRUE)
     set_target_properties(PluginAnalyzerCli PROPERTIES OUTPUT_NAME "plugin-analyzer-cli")   # console apps ignore PRODUCT_NAME
-    target_sources(PluginAnalyzerCli PRIVATE ${CORE_SOURCES} Source/api/AnalyzerApi.cpp Source/cli/CliMain.cpp)
+    target_sources(PluginAnalyzerCli PRIVATE ${CORE_SOURCES} Source/api/AnalyzerApi.cpp Source/cli/CliMain.cpp Source/cli/McpServer.cpp)
     target_include_directories(PluginAnalyzerCli PRIVATE Source)
     target_compile_definitions(PluginAnalyzerCli PRIVATE
         ${COMMON_DEFINITIONS}

@@ -55,6 +55,15 @@ plugin-analyzer-cli measure thd --plugin builtin:saturator --param 1.1.drive=6 -
 
 完整說明請看 **[docs/CLI.md](docs/CLI.md)**。
 
+### 給 LLM 使用（MCP）
+`plugin-analyzer-cli mcp` 是一個 MCP server，接上 Claude 等 LLM 用戶端後，就能用自然語言要它量測插件，例如「比較這兩個壓縮器的 attack 時間」。
+
+```bash
+claude mcp add plugin-analyzer -- /完整路徑/plugin-analyzer-cli mcp
+```
+
+設定方式、提供的工具和安全性說明，請看 **[docs/MCP.md](docs/MCP.md)**。
+
 ## 插件版（AAX / VST3 / AU）
 
 分析器也可以當作插件，直接在 DAW 裡使用：
@@ -144,13 +153,14 @@ Source/
   engine/     背景量測執行緒
   core/       App 與插件共用的核心（設定、插件載入、Play 路由與實例同步）
   api/        JSON 請求／回應介面（CLI 使用，之後的 MCP server 也會用）
-  cli/        plugin-analyzer-cli 的進入點
+  cli/        plugin-analyzer-cli 的進入點和 MCP server
   plugin/     插件版的 AudioProcessor 與編輯器
   ui/         圖表、chain 面板、各分頁、設定
-docs/         METRICS.md：每個指標的白話說明；CLI.md：命令列與 JSON 格式
+docs/         METRICS.md：每個指標的白話說明；CLI.md：命令列與 JSON 格式；MCP.md：MCP server
 Resources/    App 圖示（icon.png，由 tools/make_icon.py 產生）
 Tests/        AnalysisTests：以已知行為的處理器驗證量測結果
               PluginSmokeTest：像 DAW 一樣載入編好的 VST3，驗證 Play 路由、增益與延遲回報
+              mcp_smoke.py：用 MCP 協定完整測試 MCP server
 ```
 
 ## 授權

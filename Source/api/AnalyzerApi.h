@@ -33,6 +33,13 @@ juce::var describe();
 /** Loads one plugin and lists its identity, latency and parameters. */
 juce::var pluginInfo (const juce::String& pluginSpec);
 
+/** The standard plugin folders of this platform (VST3, and AU Components on macOS). */
+juce::Array<juce::File> pluginFolders();
+
+/** Lists installed plugin files without loading them. format: "vst3", "au" or "all";
+    filter: case-insensitive substring of the name ("" = everything). */
+juce::var listInstalledPlugins (const juce::String& filter, const juce::String& format);
+
 /** Converts a measurement result to JSON; curves are reduced to at most maxPoints each. */
 juce::var resultToJson (const AnalysisResult& result, int maxPoints);
 

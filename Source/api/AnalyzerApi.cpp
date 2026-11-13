@@ -221,6 +221,45 @@ const std::vector<SettingDef>& settingDefs()
 }
 
 //==============================================================================
+// What each metric means (served by describe() so tools and LLMs can interpret results)
+//==============================================================================
+struct GlossaryEntry { const char* name; const char* meaning; };
+
+const std::vector<GlossaryEntry>& glossary()
+{
+    static const std::vector<GlossaryEntry> list {
+        { "gain_db_at_1khz", "linear: gain at 1 kHz. 0 dB = unchanged level" },
+        { "response_min_db_20hz_20khz / response_max_db_20hz_20khz", "linear: lowest / highest gain between 20 Hz and 20 kHz; equal values = flat response" },
+        { "fundamental_hz / fundamental_dbfs", "thd: actual test frequency (snapped to an FFT bin) and the output level of that tone" },
+        { "thd_percent / thd_db", "thd: total harmonic distortion = all harmonics relative to the fundamental. < 0.01 % (-80 dB) is clean; > 1 % is clearly coloured" },
+        { "thdn_percent / thdn_db", "thd: THD plus noise and everything else that is not the fundamental; always >= THD" },
+        { "h2_dbc ... h9_dbc", "thd: level of each harmonic relative to the fundamental. Even orders (h2, h4) sound warmer, odd orders (h3, h5) harder" },
+        { "non_harmonic_db", "thd: content that is neither the fundamental nor a harmonic, mostly aliasing; lower is better" },
+        { "imd_percent / imd_db", "imd: SMPTE intermodulation (60 Hz + 7 kHz); sidebands relative to the 7 kHz tone" },
+        { "attack_ms / release_ms", "attack_release: time for 63 % of the gain change after the level goes up / down (approximate)" },
+        { "g<n>_db_at_1khz", "hammerstein: gain of the order-n branch at 1 kHz (g1 = linear part, g2 = even, g3 = odd distortion)" },
+        { "rt60_t30_s / rt60_t20_s", "reverb: time to decay by 60 dB, estimated from the -5..-35 dB (T30) or -5..-25 dB (T20) part of the decay" },
+        { "edt_s", "reverb: early decay time (from the first 10 dB); closest to perceived reverb length" },
+        { "cpu_percent_block_<n> / cpu_silence_percent_block_<n>", "performance: processing time as % of real time for block size n, with noise / with silence after noise. Silence much higher than signal suggests denormal problems" },
+        { "gain_db", "specs: gain at ~1 kHz, -20 dBFS" },
+        { "reported_latency_samples", "specs: latency the plugin reports to the host" },
+        { "impulse_peak_offset_samples", "specs: where the impulse peak lands after compensating the reported latency. Non-zero = misreported latency (or a linear-phase / look-ahead design)" },
+        { "dc_offset_dbfs", "specs: DC at the output with a silent input" },
+        { "response_deviation_db", "specs: max - min of the frequency response between 20 Hz and 20 kHz at -20 dBFS" },
+        { "low_minus3db_hz / high_minus3db_hz", "specs: -3 dB points relative to 1 kHz (bandwidth)" },
+        { "thd_percent_at_minus1dbfs / thdn_percent_at_minus1dbfs / thdn_percent_at_minus20dbfs", "specs: THD and THD+N at ~1 kHz for loud and moderate levels" },
+        { "non_harmonic_db_at_5khz / non_harmonic_db_at_10khz", "specs: aliasing + noise relative to a high-frequency tone; shows how well the plugin oversamples" },
+        { "idle_noise_dbfs / idle_noise_dbfs_a", "specs: output noise with silent input, unweighted / A-weighted. -200 means digital silence" },
+        { "dynamic_range_db_aes17", "specs: AES17 dynamic range (A-weighted THD+N ratio at -60 dBFS, plus 60 dB); larger is better" },
+        { "lr_gain_mismatch_db", "specs: right minus left channel gain" },
+        { "crosstalk_l_to_r_db_at_1khz / _10khz, crosstalk_r_to_l_db_at_1khz", "specs: how much leaks from one channel into the other. -200 = fully independent channels" },
+        { "true_peak_dbtp / intersample_overshoot_db", "specs: peak of the reconstructed waveform for a -1 dBFS tone, and how far it exceeds the sample peak" },
+        { "cpu_percent_block_512 / cpu_silence_percent_block_512", "specs: CPU use for 512-sample blocks with signal / with silence after signal" },
+    };
+    return list;
+}
+
+//==============================================================================
 // Curves
 //==============================================================================
 enum class Keep { Middle, MaxValue, MaxMagnitude };   // which point represents a bucket when reducing
@@ -505,6 +544,72 @@ void warmUp (PluginChain& chain)
 } // namespace
 
 //==============================================================================
+juce::Array<juce::File> pluginFolders()
+{
+    juce::Array<juce::File> folders;
+   #if JUCE_MAC
+    const auto home = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    folders.add (juce::File ("/Library/Audio/Plug-Ins/VST3"));
+    folders.add (home.getChildFile ("Library/Audio/Plug-Ins/VST3"));
+    folders.add (juce::File ("/Library/Audio/Plug-Ins/Components"));
+    folders.add (home.getChildFile ("Library/Audio/Plug-Ins/Components"));
+   #elif JUCE_WINDOWS
+    folders.add (juce::File::getSpecialLocation (juce::File::globalApplicationsDirectory).getChildFile ("Common Files/VST3"));
+    folders.add (juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getSiblingFile ("Local/Programs/Common/VST3"));
+   #else
+    folders.add (juce::File ("/usr/lib/vst3"));
+    folders.add (juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile (".vst3"));
+   #endif
+    return folders;
+}
+
+var listInstalledPlugins (const String& filter, const String& format)
+{
+    const auto wantVst3 = format.isEmpty() || format.equalsIgnoreCase ("all") || format.equalsIgnoreCase ("vst3");
+    const auto wantAu = format.isEmpty() || format.equalsIgnoreCase ("all") || format.equalsIgnoreCase ("au");
+    juce::Array<var> found;
+
+    // Plugin bundles are folders themselves (and Windows VST3 bundles contain another *.vst3),
+    // so stop descending at the first match.
+    std::function<void (const juce::File&, int)> scan = [&] (const juce::File& dir, int depth)
+    {
+        for (const auto& entry : juce::RangedDirectoryIterator (dir, false, "*", juce::File::findFilesAndDirectories))
+        {
+            const auto f = entry.getFile();
+            const bool isVst3 = f.hasFileExtension ("vst3"), isAu = f.hasFileExtension ("component");
+
+            if ((isVst3 && wantVst3) || (isAu && wantAu))
+            {
+                const auto name = f.getFileNameWithoutExtension();
+                if (filter.isEmpty() || name.containsIgnoreCase (filter))
+                {
+                    auto o = object();
+                    put (o, "name", name);
+                    put (o, "format", isVst3 ? "VST3" : "AU");
+                    put (o, "plugin", f.getFullPathName());
+                    found.add (o);
+                }
+            }
+            else if (! isVst3 && ! isAu && entry.isDirectory() && depth < 3)
+            {
+                scan (f, depth + 1);
+            }
+        }
+    };
+
+    for (auto& folder : pluginFolders())
+        if (folder.isDirectory())
+            scan (folder, 0);
+
+    std::sort (found.begin(), found.end(), [] (const var& a, const var& b)
+               { return a["name"].toString().compareIgnoreCase (b["name"].toString()) < 0; });
+
+    auto o = object();
+    put (o, "count", found.size());
+    put (o, "plugins", var (found));
+    return o;
+}
+
 String toJson (const var& value, bool pretty)
 {
     return juce::JSON::toString (value, ! pretty, 6);
@@ -658,6 +763,17 @@ var describe()
     }
     put (o, "builtins", var (builtins));
     put (o, "plugin_spec", "\"builtin:<id>\" or a path to a .vst3 / .component file");
+
+    juce::Array<var> glossaryList;
+    for (auto& g : glossary())
+    {
+        auto go = object();
+        put (go, "metric", g.name);
+        put (go, "meaning", g.meaning);
+        glossaryList.add (go);
+    }
+    put (o, "metrics", var (glossaryList));
+    put (o, "units", "dB = ratio (+6 dB ~ x2); dBFS = relative to digital full scale; dBc = relative to the fundamental (carrier); dBTP = true peak");
     return o;
 }
 

@@ -3,6 +3,7 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "api/AnalyzerApi.h"
+#include "McpServer.h"
 #include <iostream>
 #include <iterator>
 
@@ -32,7 +33,11 @@ Usage:
       --points N                 points per curve (default 200, 0 = numbers only)
 
   plugin-analyzer-cli run <request.json | ->
-      Run a JSON request from a file or stdin (same format the MCP server will use).
+      Run a JSON request from a file or stdin (the same format the MCP "measure" tool takes).
+
+  plugin-analyzer-cli mcp [--allow-dir <folder>]... [--allow-any-path]
+      Run as an MCP (Model Context Protocol) server on stdin/stdout, for LLM clients.
+      By default only built-ins and plugins in the standard plugin folders can be loaded.
 
 Common options:
   --pretty        indented JSON
@@ -110,6 +115,14 @@ int main (int argc, char* argv[])
     }
 
     const String command = args[0];
+
+    if (command == "mcp")
+    {
+        juce::StringArray options (args);
+        options.remove (0);
+        return pa::mcp::runServer (options);
+    }
+
     bool pretty = false;
     String outFile;
 
